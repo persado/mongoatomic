@@ -5,6 +5,7 @@ import com.mongodb.WriteConcern;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.UpdateOptions;
 import org.bson.Document;
+import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -17,6 +18,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class AtomicUpdatesTest {
 
 
+    public static final int TOTAL_WRITES = 10000;
     private static MongoClient mongo = null;
 
 
@@ -28,8 +30,8 @@ public class AtomicUpdatesTest {
     };
 
 
-    private static String MONGO_HOST = "stgmongo01.ath.persado.com";
-    //private static String MONGO_HOST = "localhost";
+    //private static String MONGO_HOST = "stgmongo01.ath.persado.com";
+    private static String MONGO_HOST = "localhost";
 
     private static int MONGO_PORT = 27017;
 
@@ -50,6 +52,7 @@ public class AtomicUpdatesTest {
 
 
     static final AtomicLong at = new AtomicLong(System.currentTimeMillis());
+    static final AtomicLong countedWrites = new AtomicLong(0);
 
     @Test
     public void atomicUpdates() throws Exception {
@@ -62,30 +65,31 @@ public class AtomicUpdatesTest {
             atomicTestCode(db, collectionName);
             System.out.println("-----------------------------------");
         });
+
+        if (TOTAL_WRITES * wc.length > countedWrites.get()) {
+            Assert.fail("Total writes counted " + countedWrites.get() + " vs " + TOTAL_WRITES * wc.length + " are not correct, some tests have failed");
+        }
     }
 
     private void atomicTestCode(final MongoDatabase db, final String collectionName) {
 
 
         ExecutorService executor = Executors.newFixedThreadPool(16);
-        for (int i = 0; i < 10000; i++) {
+        for (int i = 0; i < TOTAL_WRITES; i++) {
             executor.submit(() -> incrementCount(db, collectionName));
         }
 
         executor.shutdown();
         try {
-            executor.awaitTermination(20, TimeUnit.SECONDS);
-
-            while (!executor.isShutdown()) {
-                Thread.sleep(100);
+            while (!executor.awaitTermination(1, TimeUnit.MINUTES)) {
+                System.out.println("Waiting for termination, pending tasks still exist: "+executor);
             }
-            executor.awaitTermination(60, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
-        System.out.println("Executor is :" + executor);
+        System.out.println("Exited - executor state:" + executor);
         long res = db.getCollection(collectionName).find(new Document(id)).first().getInteger(COUNTER_FIELD);
-        if (res != 10000) {
+        if (res != TOTAL_WRITES) {
             System.out.println("!!!!!!! Test failed; expected 10000 but got " + res);
         } else {
             System.out.println("!!!!!!! Test OK!  got " + res);
@@ -95,6 +99,7 @@ public class AtomicUpdatesTest {
     private void incrementCount(MongoDatabase db, String collectionName) {
         try {
             db.getCollection(collectionName).updateOne(id, upd, updateOptions);
+            countedWrites.incrementAndGet();
         } catch (Exception e) {
             if (e.getMessage().contains("E11000")) {
                 System.out.println("Thread " + Thread.currentThread().getName() + " failed; error: " + e.getMessage());
