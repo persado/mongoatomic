@@ -30,6 +30,7 @@ public class AtomicUpdatesTest {
     };
 
 
+    //private static String MONGO_HOST = "qamongo.ath.persado.com";
     //private static String MONGO_HOST = "stgmongo01.ath.persado.com";
     private static String MONGO_HOST = "localhost";
 
@@ -47,7 +48,7 @@ public class AtomicUpdatesTest {
     @BeforeClass
     public static void initialize() {
         mongo = new MongoClient(MONGO_HOST, MONGO_PORT);
-        System.out.println("Mongo is :" + mongo.toString());
+        System.out.println("Remote MongoDB is :" + mongo.getConnectPoint() + " - "+ mongo.getDatabase("test").runCommand(new Document("buildInfo", 1)));
     }
 
 
@@ -88,11 +89,18 @@ public class AtomicUpdatesTest {
             e.printStackTrace();
         }
         System.out.println("Exited - executor state:" + executor);
-        long res = db.getCollection(collectionName).find(new Document(id)).first().getInteger(COUNTER_FIELD);
-        if (res != TOTAL_WRITES) {
-            System.out.println("!!!!!!! Test failed; expected 10000 but got " + res);
+        long res0 = db.getCollection(collectionName).find(new Document(id)).first().getInteger(COUNTER_FIELD);
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+        }
+        long res1 = db.getCollection(collectionName).find(new Document(id)).first().getInteger(COUNTER_FIELD);
+        if (res1 != TOTAL_WRITES) {
+            System.out.println("!!!!!!! Test failed; expected 10000 but got " + res1);
+        } else if (res1 != res0) {
+            System.out.println("!!!!!!! Results of 1 second difference are not correct! res0 = "+res0+", res1 = "+res1);
         } else {
-            System.out.println("!!!!!!! Test OK!  got " + res);
+            System.out.println("!!!!!!! Test OK!  got " + res1);
         }
     }
 
